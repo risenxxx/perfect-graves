@@ -1,0 +1,56 @@
+modLoader = "javafml"
+loaderVersion = "${loader_version_range}"
+license = "${mod_license}"
+issueTrackerURL = "https://github.com/risenxxx/perfect-graves/issues"
+
+[[mods]]
+modId = "${mod_id}"
+version = "${mod_version}"
+displayName = "${mod_name}"
+authors = "${mod_authors}"
+description = '''${mod_description}'''
+
+# --- Forge dependency (required) ---
+[[dependencies.${mod_id}]]
+modId = "forge"
+mandatory = true
+versionRange = "${forge_version_range}"
+ordering = "NONE"
+side = "BOTH"
+
+# --- Minecraft dependency (required) ---
+[[dependencies.${mod_id}]]
+modId = "minecraft"
+mandatory = true
+versionRange = "${minecraft_version_range}"
+ordering = "NONE"
+side = "BOTH"
+
+# --- Soft dependencies: all optional, load AFTER us so our ModList.isLoaded checks run late enough ---
+[[dependencies.${mod_id}]]
+modId = "curios"
+mandatory = false
+versionRange = "[5.0,)"
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies.${mod_id}]]
+modId = "ftbchunks"
+mandatory = false
+versionRange = "[2000,)"
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies.${mod_id}]]
+modId = "openpartiesandclaims"
+mandatory = false
+versionRange = "[0.20,)"
+ordering = "AFTER"
+side = "BOTH"
+
+[[dependencies.${mod_id}]]
+modId = "flan"
+mandatory = false
+versionRange = "[1.9,)"
+ordering = "AFTER"
+side = "BOTH"

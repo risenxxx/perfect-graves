@@ -1,0 +1,22 @@
+# Per-developer local Gradle properties. Copy this file to `gradle-local.properties`
+# (gitignored) and edit the values for your machine. Never commit the copy.
+
+# Path(s) to a Prism Launcher / MultiMC / vanilla launcher mods folder for the
+# `deployToPrism` task. Forward slashes work on Windows too — easier than
+# escaping backslashes. Leave commented out to disable the task.
+#
+# A single path or a comma-separated list is accepted. When listing multiple,
+# the freshly-built jar is copied into every entry — useful when you maintain
+# several test modpacks/instances and want to update them in one shot.
+#
+# Examples:
+#   Single instance (Windows):
+#     prismDeployPath=C:/Users/YourName/AppData/Roaming/PrismLauncher/instances/Perfect Graves E2E/minecraft/mods
+#   Single instance (Linux):
+#     prismDeployPath=/home/yourname/.local/share/PrismLauncher/instances/Perfect Graves E2E/minecraft/mods
+#   Single instance (macOS):
+#     prismDeployPath=/Users/yourname/Library/Application Support/PrismLauncher/instances/Perfect Graves E2E/minecraft/mods
+#   Multiple instances (comma-separated, on one line):
+#     prismDeployPath=C:/.../instances/Vanilla/minecraft/mods, C:/.../instances/With Xaero/minecraft/mods, C:/.../instances/With FTB Chunks/minecraft/mods
+
+# prismDeployPath=<your path here>

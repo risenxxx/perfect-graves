@@ -1,0 +1,60 @@
+# Claude Code per-user data
+.claude/
+
+# Gradle
+.gradle/
+build/
+out/
+classes/
+
+# IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Eclipse
+.classpath
+.project
+.settings/
+bin/
+*.launch
+
+# VSCode
+.vscode/
+.project
+.factorypath
+
+# ForgeGradle runs
+run/
+runs/
+run-*/
+logs/
+crash-reports/
+
+# Local maven publish target (configured in build.gradle)
+mcmodsrepo/
+
+# JVM crash / debugger artifacts
+hs_err_pid*.log
+replay_pid*.log
+.attach_pid*
+gradle-app.setting
+
+# Local environment / credentials — real tokens live in GitHub Actions secrets
+*.local
+.env
+.env.*
+gradle-local.properties
+*.local.properties
+secrets.properties
+
+# Datagen output (regenerated from `gradle runData`)
+src/generated/
+
+# Local maven publish target (offhand-tweaks alignment)
+repo/
+
+# OS
+.DS_Store
+Thumbs.db

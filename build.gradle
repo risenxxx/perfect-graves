@@ -1,0 +1,289 @@
+plugins {
+    id 'eclipse'
+    id 'idea'
+    id 'maven-publish'
+    id 'net.minecraftforge.gradle' version '[6.0.24,6.2)'
+    id 'org.parchmentmc.librarian.forgegradle' version '1.+'
+    // Publishing plugins — only do work when MODRINTH_TOKEN / CURSEFORGE_TOKEN env vars
+    // are set (see build-and-publish.yml). Loading them here is harmless without tokens.
+    id 'com.modrinth.minotaur' version '2.+'
+    id 'net.darkhax.curseforgegradle' version '1.1.18'
+}
+
+version = mod_version
+group = mod_group_id
+
+// Per-developer local Gradle properties (gitignored). Used for things like the
+// deployToPrism task's target path. Copy gradle-local.properties.example →
+// gradle-local.properties and edit. Loaded into project.ext so values are reachable
+// via project.findProperty('<key>') downstream, identical to gradle.properties keys.
+def localPropsFile = file('gradle-local.properties')
+if (localPropsFile.exists()) {
+    def localProps = new Properties()
+    localPropsFile.withInputStream { localProps.load(it) }
+    localProps.stringPropertyNames().each { key ->
+        ext[key] = localProps[key]
+    }
+}
+
+base {
+    archivesName = mod_id
+}
+
+java {
+    toolchain.languageVersion = JavaLanguageVersion.of(17)
+}
+
+minecraft {
+    mappings channel: mapping_channel, version: mapping_version
+
+    copyIdeResources = true
+
+    runs {
+        configureEach {
+            workingDirectory project.file('run')
+            property 'forge.logging.markers', 'REGISTRIES'
+            property 'forge.logging.console.level', 'debug'
+            property 'forge.enabledGameTestNamespaces', mod_id
+            mods {
+                "${mod_id}" {
+                    source sourceSets.main
+                }
+            }
+        }
+
+        client {
+            property 'forge.enabledGameTestNamespaces', mod_id
+            // Optional: `gradle runClient -Pusername=Test1` (or -PuserUuid=...) to launch
+            // a second dev client with a distinct identity for multi-player testing.
+            if (project.hasProperty('username')) args '--username', project.property('username')
+            if (project.hasProperty('userUuid')) args '--uuid', project.property('userUuid')
+        }
+
+        server {
+            property 'forge.enabledGameTestNamespaces', mod_id
+            args '--nogui'
+        }
+
+        gameTestServer {
+            property 'forge.enabledGameTestNamespaces', mod_id
+        }
+
+        data {
+            workingDirectory project.file('run-data')
+            args '--mod', mod_id, '--all', '--output', file('src/generated/resources/'), '--existing', file('src/main/resources/')
+        }
+    }
+}
+
+sourceSets.main.resources { srcDir 'src/generated/resources' }
+
+repositories {
+    // FTB Chunks / FTB Library / FTB Teams (FTB moved off saps.dev → maven.ftb.dev mid-1.20.1).
+    maven {
+        name = 'FTB'
+        url = 'https://maven.ftb.dev/releases'
+        content { includeGroup 'dev.ftb.mods' }
+    }
+    // Curios
+    maven {
+        name = 'Illusive Soulworks'
+        url = 'https://maven.theillusivec4.top/'
+        content { includeGroup 'top.theillusivec4.curios' }
+    }
+    // Open Parties And Claims + Flan: prefer Modrinth's maven
+    maven {
+        name = 'Modrinth'
+        url = 'https://api.modrinth.com/maven'
+        content { includeGroup 'maven.modrinth' }
+    }
+    // CurseForge fallback maven
+    maven {
+        name = 'CurseForge'
+        url = 'https://cursemaven.com'
+        content { includeGroup 'curse.maven' }
+    }
+    mavenCentral()
+}
+
+dependencies {
+    minecraft "net.minecraftforge:forge:${minecraft_version}-${forge_version}"
+
+    // --- Soft dependencies (compileOnly; no runtime requirement) ---
+    // Step 5 (FTB Chunks integration, current):
+    // transitive=false because the FTB POMs pull Architectury + JEI API as runtime deps
+    // from additional mavens. We only need the FTB API surface at compile time; the
+    // transitive graph is irrelevant to compilation and would force us to wire in extra
+    // maven repos (architectury, jei) that this mod otherwise doesn't touch.
+    compileOnly("dev.ftb.mods:ftb-chunks-forge:${ftbchunks_version}") { transitive = false }
+    compileOnly("dev.ftb.mods:ftb-library-forge:${ftblibrary_version}") { transitive = false }
+    compileOnly("dev.ftb.mods:ftb-teams-forge:${ftbteams_version}") { transitive = false }
+
+    // Step 12 (OPAC + Flan integrations, current):
+    // Modrinth version strings already encode loader+MC; see gradle.properties. transitive=false
+    // to avoid pulling their runtime deps (Architectury/etc) which we don't use at compile time.
+    compileOnly("maven.modrinth:open-parties-and-claims:${opac_version}") { transitive = false }
+    compileOnly("maven.modrinth:flan:${flan_version}") { transitive = false }
+
+    // Step 13 (Curios integration, current): the ":api" classifier pulls only the public API
+    // surface, which is what we reference. No transitive graph to worry about.
+    compileOnly "top.theillusivec4.curios:curios-forge:${curios_version}:api"
+}
+
+tasks.named('processResources', ProcessResources).configure {
+    var replaceProperties = [
+        minecraft_version       : minecraft_version,
+        minecraft_version_range : minecraft_version_range,
+        forge_version           : forge_version,
+        forge_version_range     : forge_version_range,
+        loader_version_range    : loader_version_range,
+        mod_id                  : mod_id,
+        mod_name                : mod_name,
+        mod_authors             : mod_authors,
+        mod_description         : mod_description,
+        mod_license             : mod_license,
+        mod_version             : mod_version
+    ]
+    inputs.properties replaceProperties
+
+    filesMatching(['META-INF/mods.toml', 'pack.mcmeta']) {
+        expand replaceProperties
+    }
+}
+
+tasks.named('jar', Jar).configure {
+    manifest {
+        attributes([
+            'Specification-Title'     : mod_name,
+            'Specification-Vendor'    : mod_authors,
+            'Specification-Version'   : '1',
+            'Implementation-Title'    : mod_name,
+            'Implementation-Version'  : mod_version,
+            'Implementation-Vendor'   : mod_authors,
+            'Implementation-Timestamp': new Date().format("yyyy-MM-dd'T'HH:mm:ssZ")
+        ])
+    }
+    finalizedBy 'reobfJar'
+}
+
+publishing {
+    publications {
+        register('mavenJava', MavenPublication) {
+            artifact jar
+        }
+    }
+    repositories {
+        maven { url "file://${project.projectDir}/mcmodsrepo" }
+    }
+}
+
+// -----------------------------------------------------------------------------
+// Modrinth publishing — only wired up when MODRINTH_TOKEN is present.
+// CI invokes this via `gradle modrinth` (see .github/workflows/build-and-publish.yml).
+// `modrinth_project_id` lives in gradle.properties.
+// -----------------------------------------------------------------------------
+if (System.getenv('MODRINTH_TOKEN')) {
+    modrinth {
+        token = System.getenv('MODRINTH_TOKEN')
+        projectId = modrinth_project_id
+        versionNumber = project.version
+        versionType = (project.version.toString().contains('-') ? 'beta' : 'release')
+        uploadFile = tasks.named('jar')
+        gameVersions = [minecraft_version]
+        loaders = ['forge']
+        syncBodyFrom = file('README.md').exists() ? file('README.md').text : null
+        // Environment metadata — must match Modrinth's "Client side" / "Server side" fields.
+        // Both required: client renderers + server cascade are both needed for the mod to work.
+        // Stamping this per-version saves a moderator correction on first publish.
+        additionalProperties = [
+            client_side: 'required',
+            server_side: 'required'
+        ]
+    }
+    tasks.named('modrinth').configure { dependsOn tasks.named('build') }
+}
+
+// -----------------------------------------------------------------------------
+// CurseForge publishing — only wired up when CURSEFORGE_TOKEN is present.
+// CI invokes this via `gradle publishCurseForge`. `curseforge_project_id` lives in
+// gradle.properties (numeric ID from the CurseForge project page).
+// -----------------------------------------------------------------------------
+if (System.getenv('CURSEFORGE_TOKEN')) {
+    tasks.register('publishCurseForge', net.darkhax.curseforgegradle.TaskPublishCurseForge) {
+        dependsOn tasks.named('build')
+        apiToken = System.getenv('CURSEFORGE_TOKEN')
+
+        def mainFile = upload(curseforge_project_id, tasks.named('jar').get().archiveFile)
+        mainFile.releaseType = (project.version.toString().contains('-') ? 'beta' : 'release')
+        mainFile.addGameVersion(minecraft_version)
+        mainFile.addModLoader('Forge')
+        mainFile.changelog = "Release ${project.version}"
+        mainFile.changelogType = 'markdown'
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+// `gradle deployToPrism` — drop the freshly-reobfuscated jar into one or more Prism Launcher
+// (or any vanilla-style) mods folders configured via `prismDeployPath` in
+// gradle-local.properties. Used for end-to-end testing against production third-party mods
+// that don't behave under `runClient` (typically mixin-heavy mods like Xaero's that ship SRG
+// refmaps). Always writes to a fixed `<mod_id>-dev.jar` so the file overwrites itself —
+// no version churn in the target folder.
+//
+// `prismDeployPath` accepts a single path or a comma-separated list — useful when you keep
+// multiple test modpacks/instances and want to update all of them in one shot. Whitespace
+// around each entry is trimmed; empty entries are skipped. Commas are illegal in Windows /
+// macOS / Linux paths in practice, so no escaping is needed.
+tasks.register('deployToPrism') {
+    group = 'perfectgraves'
+    description = 'Copy the built mod jar into every Prism instance listed in prismDeployPath (comma-separated) in gradle-local.properties.'
+    dependsOn 'build'
+
+    doLast {
+        def raw = project.findProperty('prismDeployPath')
+        if (raw == null || raw.toString().trim().isEmpty()) {
+            throw new GradleException(
+                "prismDeployPath is not configured.\n" +
+                "Copy gradle-local.properties.example to gradle-local.properties and set the value."
+            )
+        }
+        def paths = raw.toString().split(',')
+            .collect { it.trim() }
+            .findAll { !it.isEmpty() }
+        if (paths.isEmpty()) {
+            throw new GradleException("prismDeployPath is empty after parsing.")
+        }
+
+        // Validate all paths first so the user sees every problem at once instead of
+        // trial-and-error fixing one entry per run.
+        def errors = []
+        def targetDirs = []
+        paths.each { p ->
+            def dir = file(p)
+            if (!dir.isDirectory()) {
+                errors << "  - not an existing directory: ${dir}"
+            }
+            targetDirs << dir
+        }
+        if (!errors.isEmpty()) {
+            throw new GradleException(
+                "prismDeployPath has invalid entries:\n" + errors.join('\n') +
+                "\nCheck gradle-local.properties — the value is comma-separated."
+            )
+        }
+
+        def builtJar = layout.buildDirectory.file("libs/${mod_id}-${mod_version}.jar").get().asFile
+        if (!builtJar.exists()) {
+            throw new GradleException("Built jar not found at ${builtJar}; expected the 'build' task to produce it.")
+        }
+
+        targetDirs.each { dir ->
+            def targetFile = new File(dir, "${mod_id}-dev.jar")
+            targetFile.bytes = builtJar.bytes
+            logger.lifecycle("Deployed ${builtJar.name} → ${targetFile.absolutePath}")
+        }
+    }
+}
