@@ -192,13 +192,11 @@ if (System.getenv('MODRINTH_TOKEN')) {
         gameVersions = [minecraft_version]
         loaders = ['forge']
         syncBodyFrom = file('README.md').exists() ? file('README.md').text : null
-        // Environment metadata — must match Modrinth's "Client side" / "Server side" fields.
-        // Both required: client renderers + server cascade are both needed for the mod to work.
-        // Stamping this per-version saves a moderator correction on first publish.
-        additionalProperties = [
-            client_side: 'required',
-            server_side: 'required'
-        ]
+        // Environment metadata (client_side / server_side) must be set in the Modrinth web UI
+        // — Project Settings → Environments. Minotaur 2.x doesn't expose a version-level field
+        // for this yet (Modrinth's env-metadata overhaul moved faster than the plugin). Both
+        // sides are "required" for Perfect Graves: client renderers + server cascade are both
+        // load-bearing.
     }
     tasks.named('modrinth').configure { dependsOn tasks.named('build') }
 }
