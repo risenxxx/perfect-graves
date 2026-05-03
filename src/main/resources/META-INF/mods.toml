@@ -9,6 +9,8 @@ version = "${mod_version}"
 displayName = "${mod_name}"
 authors = "${mod_authors}"
 description = '''${mod_description}'''
+logoFile = "logo.png"
+logoBlur = false
 
 # --- Forge dependency (required) ---
 [[dependencies.${mod_id}]]
