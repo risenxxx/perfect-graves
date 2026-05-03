@@ -7,7 +7,7 @@
 [![CurseForge](https://raw.githubusercontent.com/intergrav/devins-badges/v3/assets/cozy/available/curseforge_vector.svg)](https://www.curseforge.com/minecraft/mc-mods/perfect-graves)
 [![Modrinth](https://raw.githubusercontent.com/intergrav/devins-badges/v3/assets/cozy/available/modrinth_vector.svg)](https://modrinth.com/mod/perfect-graves)
 
-[![CurseForge downloads](https://img.shields.io/curseforge/dt/0?logo=curseforge&label=CurseForge&color=F16436)](https://www.curseforge.com/minecraft/mc-mods/perfect-graves)
+[![CurseForge downloads](https://img.shields.io/curseforge/dt/1530944?logo=curseforge&label=CurseForge&color=F16436)](https://www.curseforge.com/minecraft/mc-mods/perfect-graves)
 [![Modrinth downloads](https://img.shields.io/modrinth/dt/perfect-graves?logo=modrinth&label=Modrinth&color=00AF5C)](https://modrinth.com/mod/perfect-graves)
 
 > *A polished, claims-aware death-recovery system for Forge 1.20.1. Lose nothing, find everything, suit up in one motion.*
