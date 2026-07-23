@@ -47,7 +47,7 @@ jobs:
       should_release: ${{ steps.version.outputs.should_release }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           # Full history so `git rev-parse v$VERSION` can see existing tags.
           fetch-depth: 0
@@ -130,7 +130,7 @@ jobs:
       tag: v${{ needs.build.outputs.version }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download mod jar artifact
         uses: actions/download-artifact@v4
@@ -160,7 +160,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up JDK ${{ env.JAVA_VERSION }}
         uses: actions/setup-java@v4
@@ -194,7 +194,7 @@ jobs:
     timeout-minutes: 5
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # Guards the non-negotiables documented in CLAUDE.md (Critical Invariants section).
       # Fast grep-based checks that catch the most common regressions without requiring
