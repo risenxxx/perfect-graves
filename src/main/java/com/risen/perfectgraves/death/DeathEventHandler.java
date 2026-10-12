@@ -95,22 +95,35 @@ public final class DeathEventHandler {
         var uuid = player.getUUID();
         String name = player.getGameProfile().getName();
 
-        // Diagnostic: confirm handler fires and whether PendingDeath is present.
-        PGLog.info(PGLog.DEATH, "{} onLivingDrops fired drops={} canceled={} uuid={}",
-            name, event.getDrops().size(), event.isCanceled(), uuid);
+        PGLog.debug(PGLog.DEATH, "{} onLivingDrops fired drops={} canceled={}",
+            name, event.getDrops().size(), event.isCanceled());
 
-        if (GraveProcessor.wasHandled(uuid, gameTime)) {
-            PGLog.debug(PGLog.DEATH, "{} already handled; cancelling re-fire", name);
-            event.setCanceled(true);
-            return;
-        }
-
+        // Read the PendingDeath BEFORE the already-handled check: the dedup key is the death's own
+        // tick, which only the PendingDeath knows. Checking a bare time window here instead used
+        // to destroy the inventory of any second death that happened within TTL_TICKS of the
+        // first — see GraveProcessor.wasHandled.
         var pendingOpt = GraveProcessor.pending(uuid);
         if (pendingOpt.isEmpty()) {
+            // Either another mod cancelled LivingDeathEvent upstream and we never claimed this
+            // death (nothing to do — let vanilla drop), or this is a re-fire for a death we did
+            // handle whose entry has since been consumed by the XP handler. Only the latter may
+            // swallow the drops.
+            if (GraveProcessor.handledRecently(uuid, gameTime)) {
+                PGLog.debug(PGLog.DEATH, "{} drops re-fire after PendingDeath was consumed; cancelling", name);
+                event.setCanceled(true);
+                return;
+            }
             PGLog.warn(PGLog.DEATH, "{} onLivingDrops but no PendingDeath (cancelled upstream?)", name);
             return;
         }
         var pending = pendingOpt.get();
+
+        if (GraveProcessor.wasHandled(uuid, pending.gameTime())) {
+            PGLog.debug(PGLog.DEATH, "{} drops for death @ tick {} already routed; cancelling re-fire",
+                name, pending.gameTime());
+            event.setCanceled(true);
+            return;
+        }
 
         // Copy stacks out of the ItemEntities so the curios-origin tagging below doesn't mutate
         // the originals — if the cascade ends in VANILLA_DROP, the event isn't cancelled and
@@ -163,7 +176,7 @@ public final class DeathEventHandler {
             PGLog.info(PGLog.CASCADE, "{} skipping placement: no items or xp to preserve (all soulbound or empty)",
                 name);
             event.setCanceled(true);
-            GraveProcessor.markHandled(uuid, gameTime);
+            GraveProcessor.markHandled(uuid, pending.gameTime());
             return;
         }
 
@@ -188,7 +201,7 @@ public final class DeathEventHandler {
         // Items went to grave/safe-drop/virtual/return — stop vanilla from also dropping.
         // Transfer into the chosen destination happens in steps 3+ as each destination is implemented.
         event.setCanceled(true);
-        GraveProcessor.markHandled(uuid, gameTime);
+        GraveProcessor.markHandled(uuid, pending.gameTime());
     }
 
     private static void recordHistoryEntry(ServerPlayer player, List<ItemStack> pool, int savedXp,

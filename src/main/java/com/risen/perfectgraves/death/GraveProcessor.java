@@ -1,8 +1,8 @@
 package com.risen.perfectgraves.death;
 
-import com.risen.perfectgraves.PerfectGraves;
 import com.risen.perfectgraves.placement.PlacementCascade;
 import com.risen.perfectgraves.placement.SafePosData;
+import com.risen.perfectgraves.util.PGLog;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
@@ -20,6 +20,9 @@ public final class GraveProcessor {
     private static final long TTL_TICKS = 100L;
 
     private static final Map<UUID, PendingDeath> pending = new ConcurrentHashMap<>();
+
+    // uuid → the gameTime of the death whose drops we have already routed. The VALUE is a death
+    // identity, not a "last seen" timestamp — see wasHandled.
     private static final Map<UUID, Long> handled = new ConcurrentHashMap<>();
 
     private GraveProcessor() {}
@@ -27,17 +30,11 @@ public final class GraveProcessor {
     public static void claim(ServerPlayer player, DeathContext ctx, Optional<SafePosData> safePos,
                              Map<String, ItemStack> curios, long gameTime, @Nullable Component deathMessage) {
         pending.put(player.getUUID(), new PendingDeath(ctx, safePos, curios, gameTime, deathMessage, Optional.empty()));
-        PerfectGraves.LOGGER.info("[pg.death] {} claim stored; uuid={} pending-size={} keys={} map-id=0x{} cls-id=0x{}",
-            player.getGameProfile().getName(), player.getUUID(), pending.size(), pending.keySet(),
-            Integer.toHexString(System.identityHashCode(pending)),
-            Integer.toHexString(System.identityHashCode(GraveProcessor.class)));
+        PGLog.debug(PGLog.DEATH, "{} claim stored for death @ tick {}",
+            player.getGameProfile().getName(), gameTime);
     }
 
     public static Optional<PendingDeath> pending(UUID id) {
-        PerfectGraves.LOGGER.info("[pg.death] pending() read uuid={} size={} keys={} map-id=0x{} cls-id=0x{}",
-            id, pending.size(), pending.keySet(),
-            Integer.toHexString(System.identityHashCode(pending)),
-            Integer.toHexString(System.identityHashCode(GraveProcessor.class)));
         return Optional.ofNullable(pending.get(id));
     }
 
@@ -46,19 +43,37 @@ public final class GraveProcessor {
     }
 
     public static Optional<PendingDeath> consume(UUID id) {
-        PendingDeath removed = pending.remove(id);
-        PerfectGraves.LOGGER.info("[pg.death] consume({}) called; wasPresent={} newSize={}",
-            id, removed != null, pending.size());
-        return Optional.ofNullable(removed);
+        return Optional.ofNullable(pending.remove(id));
     }
 
-    public static boolean wasHandled(UUID id, long gameTime) {
+    // Has the drops event for THIS death already been routed?
+    //
+    // The key is the death's own gameTime (from its PendingDeath), not "did this player die at
+    // some point in the last TTL_TICKS". The window form was a silent item-loss bug: a player who
+    // died twice inside 5 seconds — respawning into lava, into a mob-infested spawn point, or back
+    // into the void — had the second death's entire inventory cancelled with no grave, no virtual
+    // grave and no death-history entry. It also pre-empted death-loop detection, whose own window
+    // is 200 ticks, so the feature written for exactly that situation never got to run.
+    //
+    // Keying on the death tick still catches the case this guard exists for (another mod re-firing
+    // LivingDropsEvent for a death we already handled), including a re-fire a tick or two later,
+    // because a re-fire carries the same PendingDeath and therefore the same death tick.
+    public static boolean wasHandled(UUID id, long deathGameTime) {
         Long ts = handled.get(id);
-        return ts != null && gameTime - ts <= TTL_TICKS;
+        return ts != null && ts.longValue() == deathGameTime;
     }
 
-    public static void markHandled(UUID id, long gameTime) {
-        handled.put(id, gameTime);
+    // Fallback for when the PendingDeath is already gone and the death tick is unreadable (the XP
+    // handler consumed it, or the sweeper did). Safe as a time window here precisely because a
+    // genuinely NEW death always has a live PendingDeath: claim() runs at HIGHEST on
+    // LivingDeathEvent, in the same tick as the drops event that follows it.
+    public static boolean handledRecently(UUID id, long now) {
+        Long ts = handled.get(id);
+        return ts != null && now - ts <= TTL_TICKS;
+    }
+
+    public static void markHandled(UUID id, long deathGameTime) {
+        handled.put(id, deathGameTime);
     }
 
     public static PlacementCascade.Outcome run(ServerPlayer player, List<ItemStack> pool, int xp, PendingDeath entry) {
@@ -74,27 +89,17 @@ public final class GraveProcessor {
         int ep = beforeP - pending.size();
         int eh = beforeH - handled.size();
         if (ep > 0 || eh > 0) {
-            PerfectGraves.LOGGER.info("[pg.death] sweeper evicted pending={} handled={} now={} map-id=0x{}",
-                ep, eh, now, Integer.toHexString(System.identityHashCode(pending)));
+            PGLog.debug(PGLog.DEATH, "sweeper evicted pending={} handled={} now={}", ep, eh, now);
         }
     }
 
     public static void clear(UUID id) {
-        int beforeSize = pending.size();
         pending.remove(id);
         handled.remove(id);
-        PerfectGraves.LOGGER.info("[pg.death] clear({}) called; pending went {} → {}",
-            id, beforeSize, pending.size(),
-            new Exception("stacktrace"));
     }
 
     public static void clearAll() {
-        int beforeSize = pending.size();
         pending.clear();
         handled.clear();
-        if (beforeSize > 0) {
-            PerfectGraves.LOGGER.info("[pg.death] clearAll() called; pending went {} → 0",
-                beforeSize, new Exception("stacktrace"));
-        }
     }
 }

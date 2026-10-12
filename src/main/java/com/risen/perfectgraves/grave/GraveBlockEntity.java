@@ -291,45 +291,13 @@ public class GraveBlockEntity extends BlockEntity implements Container, MenuProv
         if (!(level instanceof ServerLevel sl)) return;
         PGConfig.SelfDestructMode mode = PGConfig.COMMON.onSelfDestruct.get();
 
-        if (mode == PGConfig.SelfDestructMode.VIRTUAL_GRAVE
-            && be.owner != null
-            && be.owner.getId() != null) {
-
-            List<ItemStack> items = new ArrayList<>();
-            for (int i = 0; i < be.items.size(); i++) {
-                ItemStack s = be.items.get(i);
-                if (!s.isEmpty()) items.add(s.copy());
-            }
-
-            if (!items.isEmpty()) {
-                String causeJson = be.deathMessage != null
-                    ? net.minecraft.network.chat.Component.Serializer.toJson(be.deathMessage)
-                    : "";
-                VirtualGrave vg = new VirtualGrave(
-                    UUID.randomUUID(),
-                    be.owner.getId(),
-                    be.owner.getName() != null ? be.owner.getName() : "unknown",
-                    pos,
-                    sl.dimension(),
-                    System.currentTimeMillis(),
-                    items,
-                    be.xp,
-                    causeJson
-                );
-                VirtualGraveData.get(sl.getServer()).add(vg);
+        if (mode == PGConfig.SelfDestructMode.VIRTUAL_GRAVE) {
+            VirtualGrave vg = be.packIntoVirtualGrave(sl, pos);
+            if (vg != null) {
                 PGLog.info(PGLog.GRAVE, "self-destruct @ {} → virtual grave {} ({} items, {} xp)",
-                    pos, vg.id(), items.size(), be.xp);
-
-                // Notify the owner (if online) so they discover the conversion via chat instead
-                // of finding the grave gone with no explanation. Offline owners just see the new
-                // entry the next time they run /grave list — acceptable per the simpler-path UX.
-                net.minecraft.server.level.ServerPlayer ownerPlayer =
-                    sl.getServer().getPlayerList().getPlayer(be.owner.getId());
-                if (ownerPlayer != null) {
-                    com.risen.perfectgraves.placement.PlacementCascade.notifyVirtualGraveCreated(ownerPlayer);
-                }
+                    pos, vg.id(), vg.items().size(), vg.xp());
             } else {
-                PGLog.info(PGLog.GRAVE, "self-destruct @ {}: empty grave, removing block", pos);
+                PGLog.info(PGLog.GRAVE, "self-destruct @ {}: nothing to preserve, removing block", pos);
             }
         } else if (mode == PGConfig.SelfDestructMode.DESTROY) {
             PGLog.error(PGLog.GRAVE, "self-destruct (DESTROY mode) @ {} — {} items and {} xp lost",
@@ -337,7 +305,79 @@ public class GraveBlockEntity extends BlockEntity implements Container, MenuProv
         }
 
         be.items.clear();
+        be.xp = 0;
         sl.removeBlock(pos, false);
+    }
+
+    // Packs whatever the BE currently holds into a restorable virtual grave and empties the BE,
+    // so the caller is free to remove the block afterwards without double-granting. Returns the
+    // stored grave, or null when there was nothing to preserve (or no owner to attribute it to).
+    //
+    // Deliberately does NOT consult [virtualGrave].enabled: that flag chooses where the *death
+    // cascade* routes items, whereas this is a rescue for items that already exist and would
+    // otherwise be destroyed. An admin picking SAFE_DROP for deaths is not asking us to delete
+    // someone's inventory because a dragon flew past.
+    @Nullable
+    private VirtualGrave packIntoVirtualGrave(ServerLevel level, BlockPos pos) {
+        if (owner == null || owner.getId() == null) return null;
+
+        List<ItemStack> contents = new ArrayList<>();
+        for (int i = 0; i < items.size(); i++) {
+            ItemStack s = items.get(i);
+            if (!s.isEmpty()) contents.add(s.copy());
+        }
+        if (contents.isEmpty() && xp <= 0) return null;
+
+        String causeJson = deathMessage != null ? Component.Serializer.toJson(deathMessage) : "";
+        VirtualGrave vg = new VirtualGrave(
+            UUID.randomUUID(),
+            owner.getId(),
+            owner.getName() != null ? owner.getName() : "unknown",
+            pos,
+            level.dimension(),
+            System.currentTimeMillis(),
+            contents,
+            xp,
+            causeJson
+        );
+        VirtualGraveData.get(level.getServer()).add(vg);
+
+        items.clear();
+        xp = 0;
+        setChanged();
+
+        // Notify the owner (if online) so they discover the conversion via chat instead of
+        // finding the grave gone with no explanation. Offline owners just see the new entry the
+        // next time they run /grave list — acceptable per the simpler-path UX.
+        net.minecraft.server.level.ServerPlayer ownerPlayer =
+            level.getServer().getPlayerList().getPlayer(owner.getId());
+        if (ownerPlayer != null) {
+            com.risen.perfectgraves.placement.PlacementCascade.notifyVirtualGraveCreated(ownerPlayer);
+        }
+        return vg;
+    }
+
+    // Called from GraveBlock.onRemove when the block is removed by something that is not one of
+    // our own pickup paths — see the comment there for the list. Converts the contents into a
+    // virtual grave so `/grave list` can still retrieve them, because the block drops nothing on
+    // its own (noLootTable) and the items exist only inside this BE.
+    public void rescueFromExternalRemoval(ServerLevel level, BlockPos pos) {
+        if (isEmpty() && xp <= 0) return;
+
+        int itemCount = 0;
+        for (ItemStack s : items) {
+            if (!s.isEmpty()) itemCount++;
+        }
+        int xpAmount = xp;
+
+        VirtualGrave vg = packIntoVirtualGrave(level, pos);
+        if (vg != null) {
+            PGLog.warn(PGLog.GRAVE, "grave @ {} removed externally ({} items, {} xp) → virtual grave {}",
+                pos, itemCount, xpAmount, vg.id());
+        } else {
+            PGLog.error(PGLog.GRAVE, "grave @ {} removed externally with no owner on record — "
+                + "{} items and {} xp lost", pos, itemCount, xpAmount);
+        }
     }
 
     // --- Container ---
