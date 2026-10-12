@@ -64,13 +64,15 @@ support diagnostics:
 6. **Vanilla drop** — only when admin chose VANILLA_DROP, or virtual graves are disabled. A loose-drop
    marker spawns at the death pos so the player can find their items. Log: `step=4-vanilla`.
 
-There are seven distinct triggers that route to virtual grave: VIRTUAL_GRAVE fallback mode,
-claim-blocked platform on lava/void, platform generation disabled, death-loop truncation,
-SAFE_DROP-with-no-candidate (the Nether-bedrock rescue), RETURN_TO_INVENTORY mode (handled
-by the same exhausted-options path), and self-destruct timer fired with `onSelfDestruct =
-"VIRTUAL_GRAVE"`. Each one logs `step=5-virtual (...)` (or, for the self-destruct case,
-`self-destruct @ <pos> → virtual grave <uuid>`) — keep this list in sync if the cascade
-changes.
+There are eight distinct triggers that route to virtual grave: VIRTUAL_GRAVE fallback mode
+(the default since 1.0.3), claim-blocked platform on lava/void, platform generation disabled,
+death-loop truncation, SAFE_DROP-with-no-candidate (the Nether-bedrock rescue),
+RETURN_TO_INVENTORY mode (handled by the same exhausted-options path), self-destruct timer
+fired with `onSelfDestruct = "VIRTUAL_GRAVE"`, and external removal of an already-placed
+grave block (the rescue net in `GraveBlock.onRemove`). Each one logs `step=5-virtual (...)`,
+or `self-destruct @ <pos> → virtual grave <uuid>` and
+`grave @ <pos> removed externally (...) → virtual grave <uuid>` for the two post-placement
+cases — keep this list in sync if the cascade changes.
 
 ## Critical invariants
 
@@ -79,7 +81,22 @@ These are non-negotiable; violating them caused real bugs in the past.
 - **Items are never silently lost.** If the cascade can't find a physical spot, it MUST route to
   virtual grave (when enabled) — the vanilla-drop branch only fires when the admin explicitly
   chose it or when `[virtualGrave].enabled = false`. Don't add a code path that drops to vanilla
-  without a marker spawn AND a clear log line.
+  without a marker spawn AND a clear log line. The same applies *after* placement: the block is
+  `noLootTable()` and its contents exist only in the BE, so every path that removes a grave
+  block must either empty the BE first (our own pickup paths do) or go through the rescue net
+  in `GraveBlock.onRemove`, which converts the contents to a virtual grave. Never add a removal
+  path that bypasses both.
+- **Graves must survive the explosion that created them.** Blast resistance alone does NOT do
+  this — see the explosion gotcha below. `GraveBlock.onBlockExploded` is overridden to a no-op
+  and `dropFromExplosion` returns false; `#minecraft:dragon_immune` and
+  `#minecraft:wither_immune` in `src/main/resources/data/minecraft/tags/blocks/` cover the two
+  mobs that delete blocks without consulting blast resistance at all. If you touch any of
+  these, re-test with a creeper kill on open ground.
+- **The drops-event dedup key is the death's own tick, never a time window.** `GraveProcessor`
+  stores the `PendingDeath.gameTime()` of the death whose drops it routed, and
+  `wasHandled` compares for equality. A window (`now - ts <= TTL`) cannot distinguish a
+  re-fire from a genuine second death, and silently destroyed the inventory of anyone who died
+  twice within 5 seconds — it also pre-empted death-loop detection's own 200-tick window.
 - **`LivingDropsEvent` runs at `EventPriority.LOWEST` with `receiveCanceled=false`.** Other mods'
   drop-adding listeners (Apotheosis, etc.) on NORMAL must run BEFORE us so their items land in
   the grave. If you change priority, document why in CLAUDE.md and add a regression test.
@@ -159,6 +176,16 @@ warn (not fatal). Per-dim keys: `maxSearchRadius`, `voidGravePlatformY`.
 - **`Inventory.add` silently destroys overflow when `Abilities.instabuild=true`** (creative mode).
   `QuickPickup.spillRest` works around this by temporarily clearing the flag. Don't reintroduce
   the bug by calling `add` inside a creative-mode path without that workaround.
+- **Blast resistance does not protect a block the explosion is about to place.** Vanilla's
+  `Explosion.explode()` collects `toBlow` (air cells included — `getBlockExplosionResistance`
+  returns `Optional.empty()` for air, so nothing is subtracted and the ray keeps travelling)
+  and *then* damages entities. The player's death, `LivingDropsEvent` and the whole placement
+  cascade run synchronously inside `entity.hurt()`, i.e. still inside `explode()`.
+  `finalizeExplosion()` afterwards walks the already-collected list, re-reads each position and
+  removes anything that is no longer air — **without re-checking blast resistance**. So a grave
+  placed into a cell already queued for removal is deleted by the very explosion that killed
+  the player. Forge's `onBlockExploded` replaces that `removeBlock` + `wasExploded` pair
+  (Explosion.java.patch hunk 5 on the 1.20.1 branch), which is why overriding it is the fix.
 - **`FluidTags.WATER` matches both source and flowing water.** Always check `isSource()` if you
   intend "source only" — relevant in `PlacementCascade.placeGrave` (grave waterlog) and anywhere
   else fluid identity matters.

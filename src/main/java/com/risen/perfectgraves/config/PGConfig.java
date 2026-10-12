@@ -123,7 +123,18 @@ public final class PGConfig {
             b.pop();
 
             b.push("fallback");
-            fallbackMode = b.comment("What to do when grave placement can't find any valid spot.").defineEnum("mode", FallbackMode.SAFE_DROP);
+            fallbackMode = b.comment(
+                "What to do when grave placement can't find any valid spot.",
+                "  VIRTUAL_GRAVE       — stash the items server-side; the owner retrieves them with",
+                "                        /grave list. The only mode that cannot lose items.",
+                "  SAFE_DROP           — drop them as loose item entities on the nearest safe ledge.",
+                "                        Recoverable by walking there, but they despawn after five",
+                "                        minutes and an explosion or lava flow destroys them, and no",
+                "                        command can bring them back once they're gone.",
+                "  RETURN_TO_INVENTORY — currently routed through VIRTUAL_GRAVE.",
+                "  VANILLA_DROP        — hand the drops back to vanilla. Items can be lost; a",
+                "                        loose-drop marker is spawned so they can at least be found."
+            ).defineEnum("mode", FallbackMode.VIRTUAL_GRAVE);
             safeDropAvoidLava = b.comment("When picking a safe-drop spot, reject positions adjacent to lava.").define("safeDropAvoidLava", true);
             safeDropAvoidVoid = b.comment("When picking a safe-drop spot, reject positions near the void (min-build-height).").define("safeDropAvoidVoid", true);
             looseDropMarkerEnabled = b.comment(

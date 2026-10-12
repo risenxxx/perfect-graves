@@ -25,6 +25,7 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.BooleanProperty;
 import net.minecraft.world.level.material.FluidState;
 import net.minecraft.world.level.material.Fluids;
+import net.minecraft.world.level.Explosion;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.shapes.CollisionContext;
 import net.minecraft.world.phys.shapes.Shapes;
@@ -74,19 +75,78 @@ public class GraveBlock extends BaseEntityBlock implements SimpleWaterloggedBloc
         return RenderShape.INVISIBLE;
     }
 
-    // When the grave block is replaced (broken / picked up / piston-pushed), evict the
-    // client-side marker cache entry so the marker stops rendering. Fires on both server and
-    // client because the client receives a block-update packet whenever the server changes
-    // a block state. Server-side execution never loads the client class because the call is
-    // gated by isClientSide. Doing this on the actual block-change event is more reliable
-    // than per-frame block-state inspection, which has false positives during chunk
-    // load/unload transitions.
+    // When the grave block is replaced (broken / picked up), evict the client-side marker cache
+    // entry so the marker stops rendering. Kept as a defensive hook only: in 1.20.1
+    // LevelChunk.setBlockState calls onRemove on the server and goes straight to
+    // removeBlockEntity on the client, so the client's eviction in practice comes from
+    // GraveBlockEntity.setRemoved. Server-side execution never loads the client class because
+    // the call is gated by isClientSide.
     @Override
     public void onRemove(BlockState pState, Level pLevel, BlockPos pPos, BlockState pNewState, boolean pIsMoving) {
-        if (pLevel.isClientSide && !pState.is(pNewState.getBlock())) {
+        boolean blockChanged = !pState.is(pNewState.getBlock());
+
+        if (pLevel.isClientSide && blockChanged) {
             com.risen.perfectgraves.client.ClientGraveCache.evictAt(pLevel.dimension(), pPos);
         }
+
+        // Rescue net for removals that bypass every one of our own pickup paths. The block has
+        // noLootTable() and its contents live only in the BE, so anything that simply swaps the
+        // block for air destroys the items outright: the Ender Dragon's wall-breaker (removeBlock,
+        // ignores blast resistance and only honours #minecraft:dragon_immune), a wither's block
+        // smash (destroyBlock, same deal), modded block breakers and quarries, /setblock,
+        // worldedit. None of those fire BlockEvent.BreakEvent.
+        //
+        // onRemove runs BEFORE super removes the BE, so the contents are still readable here, and
+        // vanilla does not call it on chunk unload (only setRemoved), so it cannot fire
+        // spuriously. All of our own paths — QuickPickup, the menu's drained-grave cleanup, the
+        // self-destruct timer, the placeGrave rollback — empty the BE before removing the block,
+        // so the rescue no-ops for them.
+        //
+        // pIsMoving means vanilla intends to recreate the BE elsewhere (piston). PushReaction.BLOCK
+        // makes that unreachable for us, but honour the contract rather than risk duplicating.
+        if (blockChanged && !pIsMoving && !pLevel.isClientSide
+            && pLevel instanceof ServerLevel sl
+            && sl.getBlockEntity(pPos) instanceof GraveBlockEntity be) {
+            be.rescueFromExternalRemoval(sl, pPos);
+        }
+
         super.onRemove(pState, pLevel, pPos, pNewState, pIsMoving);
+    }
+
+    // Explosion immunity, part two — and the part that actually matters.
+    //
+    // The 3,600,000 blast resistance set in PGBlocks only protects a grave that already exists
+    // when an explosion goes off. It does nothing about the explosion that *created* the grave,
+    // which is the overwhelmingly common case: creeper, TNT, ghast fireball, end crystal, bed in
+    // the Nether. Vanilla's order is:
+    //
+    //   Explosion.explode()           ray-casts and collects `toBlow`, THEN damages entities. Air
+    //                                 cells land in `toBlow` too, because
+    //                                 getBlockExplosionResistance returns Optional.empty() for air
+    //                                 so nothing is subtracted and the ray travels on. The player's
+    //                                 death — and with it LivingDropsEvent and this mod's entire
+    //                                 placement cascade — runs synchronously inside entity.hurt(),
+    //                                 i.e. still inside this call.
+    //   Explosion.finalizeExplosion() walks the already-collected `toBlow`, re-reads each position
+    //                                 and removes whatever is no longer air. Blast resistance is
+    //                                 NOT re-checked here.
+    //
+    // So the grave is placed into a cell that is already queued for removal, and the very
+    // explosion that killed the player deletes it — and every item in it — microseconds later.
+    // Overriding this Forge hook, which replaces finalizeExplosion's removeBlock + wasExploded
+    // pair and exists precisely so a block can account for its BE, makes the grave genuinely
+    // immune rather than only nominally immune.
+    @Override
+    public void onBlockExploded(BlockState state, Level level, BlockPos pos, Explosion explosion) {
+        // Deliberately empty: survive the blast, keep the BE, drop nothing.
+    }
+
+    // Belt and braces on the same path: finalizeExplosion consults this before running the loot
+    // table for a block it is about to blow up. noLootTable() already makes that a no-op, but
+    // saying no here keeps the intent explicit and skips the work.
+    @Override
+    public boolean dropFromExplosion(Explosion explosion) {
+        return false;
     }
 
     @Override

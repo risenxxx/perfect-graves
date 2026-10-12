@@ -39,7 +39,12 @@ public final class QuickPickup {
 
         distributePool(player, pool);
 
-        int xp = be.getXp();
+        // takeXp() rather than getXp(): it zeroes the BE atomically, which closes a double-grant
+        // race against the menu's take-XP button and — more importantly — leaves the BE genuinely
+        // empty before we remove the block. GraveBlock.onRemove's rescue net keys off an empty BE
+        // to tell our own pickup apart from an external removal; a lingering xp value here would
+        // make every quick-pickup also mint a stray virtual grave holding the same xp.
+        int xp = be.takeXp();
         if (xp > 0) {
             player.giveExperiencePoints(xp);
         }

@@ -147,7 +147,8 @@ Perfect Graves is designed to not wreck your TPS.
 
 - Grave placement is time-boxed (default 10 ms wall-clock per death) and early-exits as soon as it finds enough candidates.
 - It never force-loads chunks during placement.
-- Failed placements fall through a cascade that ends in either a safe drop or a virtual grave — items are never silently lost unless you explicitly set `[fallback].mode = "VANILLA_DROP"`. Even the corner case of suffocating just under the Nether bedrock ceiling routes to a virtual grave instead of letting vanilla extrude items above the ceiling.
+- Failed placements fall through a cascade that ends in a virtual grave by default — items are never silently lost unless you explicitly set `[fallback].mode` to `SAFE_DROP` or `VANILLA_DROP`. Even the corner case of suffocating just under the Nether bedrock ceiling routes to a virtual grave instead of letting vanilla extrude items above the ceiling.
+- Graves survive explosions, including the explosion that killed the player, and are tagged `#minecraft:dragon_immune` / `#minecraft:wither_immune`. If anything else removes a grave block anyway — a modded block breaker, `/setblock`, worldedit — the contents are converted to a virtual grave instead of being destroyed, with a `[pg.grave] ... removed externally` line in the log.
 - A loose-drop marker entity is spawned at `SAFE_DROP` and `VANILLA_DROP` positions so players still get a long-range waypoint to their items. It's invisible, has no collision, and self-discards after a configurable TTL (`looseDropMarkerTtlSeconds`, default 7 days). Per-viewer dismissal is purely client-side — no extra packets per player walking past.
 - It intercepts `LivingDropsEvent` at `LOWEST` priority, so mod-added drops from things like Apotheosis land in the grave correctly.
 
@@ -160,7 +161,7 @@ Server-wide config lives at `config/perfectgraves-common.toml` — all search ra
 | `[search]` | `maxSearchRadius`, `maxSearchTimeMs`, `replaceableBlocks` |
 | `[claims]` | `respectClaims`, `allowOwnClaims` |
 | `[platform]` | `allowPlatformGeneration`, `voidPlatformBlock`, `unreplaceableBlocks` |
-| `[fallback]` | `mode` — `SAFE_DROP` / `VANILLA_DROP` / `VIRTUAL_GRAVE` / `RETURN_TO_INVENTORY`; `looseDropMarkerEnabled`, `looseDropMarkerTtlSeconds` |
+| `[fallback]` | `mode` — `VIRTUAL_GRAVE` *(default)* / `SAFE_DROP` / `VANILLA_DROP` / `RETURN_TO_INVENTORY`; `looseDropMarkerEnabled`, `looseDropMarkerTtlSeconds` |
 | `[timers]` | `protectionTimeSeconds`, `selfDestructTimeSeconds`, `pauseProtectionWhileOffline` |
 | `[virtualGrave]` | `enabled`, `restoreCommandPermissionLevel`, `maxGravesPerPlayer` |
 | `[soulbound]` | `enchantments`, `nbtTags` |
