@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.1.1
+
+No changes to the mod itself — this is 1.1.0 re-released because its CurseForge upload was
+rejected by the CurseForge API and never went out. If you already have 1.1.0 from Modrinth or
+from the GitHub release, you are not missing anything.
+
+If you are on 1.0.x, read the 1.1.0 notes below and update: it fixes two bugs that could
+destroy a full inventory with no way to get it back.
+
 ## 1.1.0
 
 Two bugs in this release could destroy a full inventory with no way to get it back. If you are
