@@ -215,6 +215,18 @@ if (System.getenv('CURSEFORGE_TOKEN')) {
         mainFile.releaseType = (project.version.toString().contains('-') ? 'beta' : 'release')
         mainFile.addGameVersion(minecraft_version)
         mainFile.addModLoader('Forge')
+        // CurseForge requires every Minecraft mod upload to name at least one version from its
+        // "environment" group, alongside the MC version and the loader. Omitting it is rejected
+        // with API error 1021, "You must select at least one version from the environment group
+        // of versions" — which is what killed the 1.1.0 upload. Both sides are load-bearing for
+        // this mod (client renderers and the server-side cascade), so both are declared.
+        //
+        // Declared via addGameVersion rather than addEnvironment on purpose: CurseForgeGradle
+        // treats environments as game-version tags and only added the addEnvironment alias (plus
+        // an auto-fill / validation pass) after the 1.1.18 pinned in the plugins block, where
+        // addGameVersion is the whole API. It stores the strings verbatim, so this is also what
+        // the newer alias would do.
+        mainFile.addGameVersion('Client', 'Server')
         mainFile.changelog = "Release ${project.version}"
         mainFile.changelogType = 'markdown'
     }
